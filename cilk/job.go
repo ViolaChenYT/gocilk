@@ -4,6 +4,7 @@ type JobPriority int
 
 type Job struct {
 	Prio      JobPriority
+	children 	[]*Job
 	ID        int
 	Size      int
 	Done      bool

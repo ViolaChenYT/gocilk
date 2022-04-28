@@ -2,11 +2,10 @@ package cilk
 
 import (
 	"time"
-	"fmt"
 )
 
 const (
-	nProcessor = 20
+	nProcessor = 16
 	rho        = 2
 	delta      = 0.9
 )
@@ -14,17 +13,15 @@ const (
 // top level scheduler,
 // keep track of utilization and desier of each priority level
 type Server interface {
-	// send allocation to each priority scheduler
+	// receive jobs
 	JobCame(*Job)
+	// send allocation to each priority scheduler
 	SchedulePriorities()
-
-	//
 	Close() error
 }
 
 type server struct {
-	// denote which level should each processor be working on
-	allocation   map[int]JobPriority
+	allocation   map[int]JobPriority 
 	schedulers   map[JobPriority]Scheduler
 	desires      map[JobPriority]int
 	processors   map[int]*processor
@@ -33,7 +30,7 @@ type server struct {
 	quit         chan bool
 	incomingJobs chan *Job
 	quota        map[JobPriority]int
-	alljobs      map[int]int // record flow time
+	scheduledPrio chan bool
 }
 
 var priorities = []JobPriority{1, 2, 3, 4}
@@ -47,6 +44,7 @@ func NewServer() Server {
 		quota:        make(map[JobPriority]int),
 		incomingJobs: make(chan *Job, deqCap),
 		quit:         make(chan bool),
+		scheduledPrio: make(chan bool,1),
 	}
 	s.ticker = time.NewTicker(quanta * time.Microsecond)
 
@@ -70,21 +68,27 @@ func (s *server) Main() error {
 			job.birthTime = time.Now().UnixMicro()
 			sdlr := s.schedulers[job.Prio]
 			sdlr.NewJob(job)
-			fmt.Println("new job sent")
+			// fmt.Println("new job sent")
 		case <-s.ticker.C:
 			s.SchedulePriorities()
+			<- s.scheduledPrio
 			var already_alloced [5]int
-
+			s.allocation = make(map[int]JobPriority)
+			// fmt.Println("yeet")
 			for pi, p := range s.processors {
 				for _, i := range priorities {
 					if p.currentPrio == i && already_alloced[i] < s.quota[i] {
 						already_alloced[i]++
 						s.allocation[pi] = i
+						break
 					} else if already_alloced[i] < s.quota[i] {
 						already_alloced[i]++
 						s.allocation[pi] = i
-					}
+						break
+					} 
 				}
+				// fmt.Println(p.currentPrio, already_alloced[1],s.quota[1])
+				// fmt.Println(pi, "alloced", s.allocation[pi])
 			}
 			for _, i := range priorities {
 				mp := make(map[int]bool)
@@ -108,13 +112,14 @@ func (s *server) SchedulePriorities() {
 	// send info to schedulers to adjust processors using AdjustProcs
 	procsLeft := nProcessor
 	for _, i := range priorities {
-		if s.desires[i] <= s.quota[i] {
+		if s.desires[i] <= procsLeft {
 			s.quota[i] = s.desires[i]
 			procsLeft -= s.quota[i]
 		} else if s.desires[i] > procsLeft {
 			s.quota[i] = procsLeft
 		}
 	}
+	s.scheduledPrio <- true
 	return
 }
 

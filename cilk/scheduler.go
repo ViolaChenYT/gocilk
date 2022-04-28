@@ -4,6 +4,7 @@ import (
 	"fmt"
 )
 
+// Second level scheduler
 // scheduler of a specific priority level
 type Scheduler interface {
 	// the scheduler have access to all the deques of all the processors
@@ -12,10 +13,10 @@ type Scheduler interface {
 	// adjust what processors are "mine"
 	AdjustProcs(map[int]bool) error
 
-	// calculate utilizations from all the processors
+	// calculate utilizations from all the processors under me
 	CalculateUtils() int64
 
-	// sum over desires across all the processors under me
+	// adjust desire of the priority level
 	CalculateDesires() int
 
 	Close() error
@@ -54,6 +55,8 @@ func (sdlr *scheduler) Main() error {
 		case j := <-sdlr.receiveJobChan:
 			sdlr.jobs[j.ID] = j
 			fmt.Println("scheduler got job ",j.ID)
+			p := sdlr.processors[j.ID % nProcessor]
+			p.gotJob(j)
 		}
 	}
 }
@@ -64,10 +67,16 @@ func (sdlr *scheduler) NewJob(j *Job) error {
 func (sdlr *scheduler) AdjustProcs(myprocs map[int]bool) error {
 	sdlr.myProcessors = make(map[int]bool)
 	for i, b := range myprocs {
+		// fmt.Println(i,b)
 		if b {
+			//fmt.Println(i)
 			sdlr.myProcessors[i] = b
+			p := sdlr.processors[i]
+			p.SetPriority(sdlr.priority)
+			p.NewQ()
 		}
 	}
+	// fmt.Println("got ", sdlr.priority, len(sdlr.myProcessors))
 	return nil
 }
 
@@ -75,18 +84,25 @@ func (sdlr *scheduler) CalculateUtils() int64 {
 	total := 0
 	for i, j := range sdlr.jobs {
 		if j.Done {
-			total += j.Size
 			delete(sdlr.jobs, i)
 		}
 	}
+	for i,_ := range sdlr.myProcessors{
+		p := sdlr.processors[i]
+		if p.busyTime != 0{
+			fmt.Println("busy time", p.busyTime)
+		}
+		total += p.busyTime
+	}
+	// fmt.Println("utils", total)
 	return int64(total)
 }
 
 func (sdlr *scheduler) CalculateDesires() int {
-	//@TO-DO
+	utils := sdlr.CalculateUtils()
 	if sdlr.desire == 0 {
 		sdlr.desire = 1
-	} else if sdlr.CalculateUtils() < delta*quanta {
+	} else if utils < delta * quanta {
 		sdlr.desire = sdlr.desire / rho
 	} else if len(sdlr.myProcessors) == sdlr.desire {
 		sdlr.desire = rho * sdlr.desire
