@@ -1,18 +1,22 @@
 package cilk
 
+import (
+	"fmt"
+)
+
 // scheduler of a specific priority level
 type Scheduler interface {
 	// the scheduler have access to all the deques of all the processors
 	NewJob(*Job) error
 
 	// adjust what processors are "mine"
-	AdjustProcs() error
+	AdjustProcs(map[int]bool) error
 
 	// calculate utilizations from all the processors
-	CalculateUtils() float64
+	CalculateUtils() int64
 
 	// sum over desires across all the processors under me
-	CalculateDesires() float64
+	CalculateDesires() int
 
 	Close() error
 }
@@ -20,16 +24,16 @@ type Scheduler interface {
 type scheduler struct {
 	// access to all processors
 	priority       JobPriority
-	processors     map[int]Processor
+	processors     map[int]*processor
 	myProcessors   map[int]bool
-	totalDesire    float32
+	desire         int
 	receiveJobChan chan *Job
 	quit           chan bool
 	jobs           map[int]*Job
 	// probably some channels or whatever idk
 }
 
-func NewScheduler(p JobPriority, procs map[int]Processor) Scheduler {
+func NewScheduler(p JobPriority, procs map[int]*processor) Scheduler {
 	sdlr := scheduler{
 		priority:       p,
 		processors:     procs,
@@ -49,6 +53,7 @@ func (sdlr *scheduler) Main() error {
 			return nil
 		case j := <-sdlr.receiveJobChan:
 			sdlr.jobs[j.ID] = j
+			fmt.Println("scheduler got job ",j.ID)
 		}
 	}
 }
@@ -56,18 +61,37 @@ func (sdlr *scheduler) NewJob(j *Job) error {
 	sdlr.receiveJobChan <- j
 	return nil
 }
-func (sdlr *scheduler) AdjustProcs() error {
+func (sdlr *scheduler) AdjustProcs(myprocs map[int]bool) error {
+	sdlr.myProcessors = make(map[int]bool)
+	for i, b := range myprocs {
+		if b {
+			sdlr.myProcessors[i] = b
+		}
+	}
 	return nil
 }
 
-func (sdlr *scheduler) CalculateUtils() float64 {
-	//@TO-DO
-	return 0.0
+func (sdlr *scheduler) CalculateUtils() int64 {
+	total := 0
+	for i, j := range sdlr.jobs {
+		if j.Done {
+			total += j.Size
+			delete(sdlr.jobs, i)
+		}
+	}
+	return int64(total)
 }
 
-func (sdlr *scheduler) CalculateDesires() float64 {
+func (sdlr *scheduler) CalculateDesires() int {
 	//@TO-DO
-	return 0.0
+	if sdlr.desire == 0 {
+		sdlr.desire = 1
+	} else if sdlr.CalculateUtils() < delta*quanta {
+		sdlr.desire = sdlr.desire / rho
+	} else if len(sdlr.myProcessors) == sdlr.desire {
+		sdlr.desire = rho * sdlr.desire
+	}
+	return sdlr.desire
 }
 
 func (sdlr *scheduler) Close() error {

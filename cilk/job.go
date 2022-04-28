@@ -11,10 +11,11 @@ type Job struct {
 	deathTime int64 // time.UnixMicro()
 }
 
-func NewJob(prio JobPriority, id int) *Job {
+func NewJob(prio JobPriority, id int, size int) *Job {
 	return &Job{
 		ID:   id,
 		Prio: prio,
+		Size: size,
 		Done: false,
 	}
 }
