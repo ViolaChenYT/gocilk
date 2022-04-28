@@ -2,18 +2,13 @@ package cilk
 
 type JobPriority int
 
-const (
-	level1 JobPriority = iota
-	level2
-	level3
-	level4
-)
-
 type Job struct {
-	Prio JobPriority
-	ID   int
-	Size int
-	Done bool
+	Prio      JobPriority
+	ID        int
+	Size      int
+	Done      bool
+	birthTime int64 // use time.UnixMicro()
+	deathTime int64 // time.UnixMicro()
 }
 
 func NewJob(prio JobPriority, id int) *Job {
@@ -22,4 +17,8 @@ func NewJob(prio JobPriority, id int) *Job {
 		Prio: prio,
 		Done: false,
 	}
+}
+
+func (job *Job) GetSize() int {
+	return job.Size
 }
